@@ -1,3 +1,6 @@
+# The script starts acquisition immediately and stops only after the GUI closes
+# The script only plots data, it does not save data to disk
+
 import socket
 import numpy as np
 import pyqtgraph as pg
@@ -5,7 +8,28 @@ from PyQt5 import QtCore, QtWidgets
 import math
 import threading
 
+# for the INPUT channels each input gets one configuration byte:
+# bits 7–6  Mode (4 possibilites and result multiplied by 64)
+# bits 5–4  Gain (4 possibilites and result mutiplied by 16)
+# bit  3    HPF (2 possibilities and result multiplied by 8)
+# bit  2    HRES (2 possibilties and result multiplied by 4)
+# bits 1–0  Fsamp (4 possibility and mapped in FsampVal)
+# Meaning of the parameters is the following, even though it's unclear which value represents what
+# Possibly is just the sequence of appearance of the options in the software
+# Mode   = input/probe acquisition mode
+# Gain   = amplifier gain setting
+# HPF    = high-pass filter enabled/cutoff selection
+# HRES   = resolution mode
+# Fsamp  = sampling-frequency selector
+# ConfString[14] = CRC8(ConfString, 14)
 
+
+# Cyclic Redundancy Check, 8-bit
+# It's a very common error-detection mechanism used in communication protocols.
+# How it works is you send some bytes and compute an extra byte (the CRC).
+# The receiver computes the CRC again on the received data.
+# If the computed CRC matches the transmitted CRC, the message is assumed to be intact 
+# if not, the message is rejected.
 def CRC8(Vector, Len):
     crc = 0
     j = 0
@@ -64,9 +88,9 @@ Mode[1] = 0
 Gain[1] = 0
 HRES[1] = 0
 HPF[1] = 1
-Fsamp[1] = 1
+Fsamp[1] = 1 # i.e., 2000Hz
 
-IN_Active[2] = 1
+IN_Active[2] = 0
 Mode[2] = 0
 Gain[2] = 0
 HRES[2] = 0
@@ -145,8 +169,29 @@ for i in range(10):
     ConfString[4 + i] = Mode[i] * 64 + Gain[i] * 16 + HPF[i] * 8 + HRES[i] * 4 + Fsamp[i]
 ConfString[14] = CRC8(ConfString, 14)
 
-# Open the TCP socket
+# So each input gets one configuration byte:
+# bits 7–6  Mode
+# bits 5–4  Gain
+# bit  3    HPF
+# bit  2    HRES
+# bits 1–0  Fsamp
+
+# Open the Transmission Control Protocol (TCP) socket
+
+# A connection is established.
+# Both sides know they're talking to each other.
+# Data arrive in the correct order.
+# Missing packets are automatically retransmitted.
+# You read a continuous stream of bytes.
+
 tcp_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+# AF_INET = IPv4
+# SOCK_STREAM = TCP
+# The PC acts as a client and the Novecento+ acts as a server,
+# after that both sides can send bytes to each other
+
+# The range: 169.254.x.x is called link-local addressing.
+# It is commonly used when a device is directly connected by Ethernet
 tcp_socket.connect(('169.254.1.10', TCPPort))
 print('Connected to the Socket')
 
@@ -171,7 +216,11 @@ print('Probes configuration:', settings[1:11])
 
 tcp_socket.sendall(bytearray(ConfString))
 
-# Calculate the number of active channels
+# Calculate the number of active channels and packet-size calculation
+# This part determines how many channels each connected probe has automatically
+# For each active input, the script calculates how many samples belong to it in one 500 Hz “block”
+# Then one block includes EMG data, AUX data, 128 accessory values
+
 NumActInputs = 0
 Ptr_IN[0] = 0
 for i in range(10):
@@ -187,6 +236,13 @@ PacketSize1Block = Ptr_IN[10] + SizeAux[FSelAux] + 128
 blockData = PacketSize1Block * 500 * PlotTime * 2
 
 tcp_socket.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, blockData * 2)
+
+# The big picture
+# 1. Open TCP connection to Novecento+
+# 2. Ask for firmware version, battery level, probe configuration
+# 3. Send acquisition settings
+# 4. Receive a continuous stream of binary EMG data
+# 5. Close connection when finished
 
 # Initialize global Data variable
 Data = None
@@ -255,6 +311,14 @@ main_widget.resize(800, 600)  # Initial size of the window
 main_widget.show()
 
 terminate_thread = threading.Event()
+# Recieving data in a background thread
+# The function receive_data() runs in a separate thread.
+# It continuously reads from the TCP socket and once enough bytes have arrived (500Hz),
+# it converts them into NumPy data
+# Then it reshapes the packet so Data becomes a 2D matrix with:
+#   PacketSize1Block rows
+#   500 columns
+# This represents 1 second of streamed data arranged in 500 blocks.
 
 def receive_data():
     global Data, Temp
@@ -275,6 +339,10 @@ def receive_data():
         except (OSError, ValueError) as e:
             print(f"Error receiving data: {e}")
             break
+
+# A PyQt window is created with scrollable plots for each active input
+# Also creates AUX Channels and Accessory Channels with the plot updating every 200ms
+# For AUX the conversion factor might converts raw AUX ADC values into volts or physical units.
 
 def update_plot():
     global Data, Temp
