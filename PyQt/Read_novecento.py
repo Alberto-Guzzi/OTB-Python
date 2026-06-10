@@ -76,14 +76,14 @@ Size_IN = [0] * 11
 ChVsType = [0, 14, 22, 38, 46, 70, 102, 0, 0, 0, 0, 0, 0, 0, 0, 0]
 
 # Set configuration for each input
-IN_Active[0] = 1
+IN_Active[0] = 0
 Mode[0] = 0
 Gain[0] = 0
 HRES[0] = 0
 HPF[0] = 1
 Fsamp[0] = 1
 
-IN_Active[1] = 1
+IN_Active[1] = 0
 Mode[1] = 0
 Gain[1] = 0
 HRES[1] = 0
@@ -293,17 +293,18 @@ aux_plot = pg.PlotWidget(title=plot_title)
 aux_plot.setFixedHeight(PLOT_HEIGHT)
 aux_plot.showGrid(x=True, y=True)
 plots.append(aux_plot)
-curves.append([aux_plot.plot(pen=pg.intColor(j, 16)) for j in range(16)])
+# curves.append([aux_plot.plot(pen=pg.intColor(j, 16)) for j in range(16)])
+curves.append([aux_plot.plot(pen=pg.intColor(0, 1))])
 scroll_layout.addWidget(aux_plot)
 
-# Plot Accessory Channels
-plot_title = "Accessory Channels"
-accessory_plot = pg.PlotWidget(title=plot_title)
-accessory_plot.setFixedHeight(PLOT_HEIGHT)
-accessory_plot.showGrid(x=True, y=True)
-plots.append(accessory_plot)
-curves.append([accessory_plot.plot(pen=pg.intColor(j, 8)) for j in range(8)])
-scroll_layout.addWidget(accessory_plot)
+# # Plot Accessory Channels
+# plot_title = "Accessory Channels"
+# accessory_plot = pg.PlotWidget(title=plot_title)
+# accessory_plot.setFixedHeight(PLOT_HEIGHT)
+# accessory_plot.showGrid(x=True, y=True)
+# plots.append(accessory_plot)
+# curves.append([accessory_plot.plot(pen=pg.intColor(j, 8)) for j in range(8)])
+# scroll_layout.addWidget(accessory_plot)
 
 # Set the main widget to be the window and show it
 main_widget.setWindowTitle('Real-time Plot')
@@ -364,9 +365,11 @@ def update_plot():
             Temp = Data[Ptr_IN[10]:-128, :].reshape(1, 16 * FsampVal[FSelAux] * PlotTime, order='F')
             Sig_AUX = Temp.reshape(16, FsampVal[FSelAux] * PlotTime, order='F').astype(np.int32)
 
-            for ch in range(16):
-                if ch < len(curves[current_plot]):
-                    curves[current_plot][ch].setData(Sig_AUX[ch, :] * AuxGainFactor + offset * (15 - ch))
+#            for ch in range(16):
+#                if ch < len(curves[current_plot]):
+#                    curves[current_plot][ch].setData(Sig_AUX[ch, :] * AuxGainFactor + offset * (15 - ch))
+            curves[current_plot][0].setData(Sig_AUX[0, :] * AuxGainFactor)
+            
             current_plot += 1
 
         # Accessory Channels
